@@ -14,11 +14,10 @@ class GAPStandaloneModelBuilder:
 
         self._gap_instance = gap_instance
 
-        grb_maximization_problem = -1
         self.model = grb.Model("gap_standalone_model")
-        self.model.setAttr(grb.GRB.Attr.ModelSense, grb_maximization_problem)
+        self.model.setAttr(grb.GRB.Attr.ModelSense, grb.GRB.MAXIMIZE)
 
-        self.task_machine_to_variable: Dict[Tuple[int, int]] = dict()
+        self.task_machine_to_variable: Dict[Tuple[int, int], grb.Var] = dict()
 
     def build(self) -> GAPStandaloneModel:
         self._build_columns()
@@ -26,7 +25,6 @@ class GAPStandaloneModelBuilder:
         self.model.update()
 
         return GAPStandaloneModel(
-            self._gap_instance,
             self.model,
             bidict(self.task_machine_to_variable)
         )
@@ -40,7 +38,7 @@ class GAPStandaloneModelBuilder:
         for task_id, machine_id in tasks_times_machines:
             assignment = (task_id, machine_id)
             name = f'task_{task_id}_machine_{machine_id}'
-            profit = self._gap_instance.profit(task_id, machine_id)
+            profit = self._gap_instance.assignment_profit(task_id, machine_id)
             var = self.model.addVar(
                 lb=0.0,
                 ub=1.0,

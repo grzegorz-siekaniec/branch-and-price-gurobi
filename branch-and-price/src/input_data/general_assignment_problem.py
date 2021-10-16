@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from common import TMachineSchedule
+
 
 @dataclass(frozen=True)
 class GeneralAssignmentProblem:
@@ -12,14 +14,42 @@ class GeneralAssignmentProblem:
     profits: np.ndarray
     capacity: np.ndarray
 
-    def profit(self, task_id: int, machine_id: int) -> float:
+    def assignment_profit(self, task_id: int, machine_id: int) -> float:
         return self.profits[machine_id][task_id]
+
+    def machine_schedule_profit(self, machine_schedule: TMachineSchedule) -> float:
+        machine_id = machine_schedule[0]
+        tasks = machine_schedule[1]
+        return sum(self.profits[machine_id][task_id] for task_id in tasks)
 
     def weight(self, task_id: int, machine_id: int) -> float:
         return self.weights[machine_id][task_id]
 
     def machine_capacity(self, machine_id: int) -> float:
         return self.capacity[machine_id]
+
+
+def example_applied_integer_programming() -> GeneralAssignmentProblem:
+    num_machines = 2
+    num_tasks = 3
+    profits = np.array([
+        [10, 7, 5],
+        [6, 8, 11]
+    ])
+
+    weights = np.array([
+        [9, 6, 3],
+        [5, 7, 9]
+    ])
+
+    capacity = np.array([11, 18])
+    return GeneralAssignmentProblem(
+        num_tasks=num_tasks,
+        num_machines=num_machines,
+        weights=weights,
+        profits=profits,
+        capacity=capacity
+    )
 
 
 def small_example() -> GeneralAssignmentProblem:

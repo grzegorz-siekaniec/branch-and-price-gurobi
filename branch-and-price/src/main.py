@@ -4,7 +4,10 @@ import sys
 import gurobipy as grb
 
 import input_data
-from standalone_model.gap_standalone_model_builder import GAPStandaloneModelBuilder
+from standalone_model import GAPStandaloneModelBuilder, GAPStandaloneModelLpRelaxation, FeasibleMachineSchedulesFinder, \
+    DantzigWolfeFormulationGapStandaloneModelLpRelaxation
+from standalone_model.dantzig_wolfe_formulation_gap_standalone_model_builder import \
+    DantzigWolfeFormulationGapStandaloneModelBuilder
 
 
 def main():
@@ -32,11 +35,26 @@ def main():
 
         if use_standalone_model:
             # solve_using_standalone_model(input_data)
-            gap = input_data.small_example()
+            gap = input_data.medium_example()
+            # gap = input_data.example_applied_integer_programming()
+
             gap_model = GAPStandaloneModelBuilder(gap).build()
             gap_model.write()
             gap_model.solve()
             gap_model.report_results()
+
+            lp_relaxation = GAPStandaloneModelLpRelaxation(mip_model=gap_model.mip_model)
+            lp_relaxation.solve()
+            lp_relaxation.report_results()
+
+            dw_gap_model = DantzigWolfeFormulationGapStandaloneModelBuilder(gap_instance=gap).build()
+            dw_gap_model.write()
+            dw_gap_model.solve()
+            dw_gap_model.report_results()
+
+            dw_lp_relaxation = DantzigWolfeFormulationGapStandaloneModelLpRelaxation(mip_model=dw_gap_model.dw_model)
+            dw_lp_relaxation.solve()
+            dw_lp_relaxation.report_results()
 
         if use_branch_and_price:
             # solve_using_benders_decomposition(input_data)
