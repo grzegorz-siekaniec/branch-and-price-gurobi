@@ -60,7 +60,7 @@ class GAPStandaloneModelBuilder:
             ])
             rhs = 1
             name = f'task_assignment_{task_id}'
-            self.model.addConstr(lhs <= rhs, name=name)
+            self.model.addConstr(lhs == rhs, name=name)
 
     def _build_capacity_constraints(self):
         for machine_id in range(self._gap_instance.num_machines):

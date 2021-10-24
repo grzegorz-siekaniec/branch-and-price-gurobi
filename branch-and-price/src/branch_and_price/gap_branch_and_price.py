@@ -1,6 +1,8 @@
 import copy
 import logging
 from typing import Optional, Tuple
+import networkx as nx
+from matplotlib import pyplot
 
 from branch_and_price.branch_node import BranchNode
 from branch_and_price.branching_rule import BranchingRule
@@ -13,12 +15,12 @@ class GAPBranchAndPrice:
 
     def __init__(self, gap_instance: GeneralAssignmentProblem):
         self.gap_instance = gap_instance
+        self.tree = nx.DiGraph()
 
     def solve(self):
-        root_node = self._create_root_node()
-
-        queue: Queue[BranchNode] = Queue()
-        queue.push(root_node)
+        queue: Queue[BranchNode] = Queue([
+            self._create_root_node()
+        ])
 
         best_solution_node = None
         mip_lb = None
@@ -37,28 +39,37 @@ class GAPBranchAndPrice:
 
             if current_node.has_integer_solution():
                 logging.info("[B&P] Solution at node {} has integer solution.".format(current_node.id))
-                obj = current_node.obj_val()
+                obj = current_node.objective_value()
                 current_node.report_solution()
                 if mip_lb is None or obj > mip_lb:
                     best_solution_node = current_node
                     mip_lb = obj
             else:
-                logging.info("[B&P] Solution at node {} has non integer solution.".format(current_node.id))
+                obj = current_node.objective_value()
+                logging.info("[B&P] Solution at node %d has non integer solution. Obj %.1f", current_node.id, obj)
                 if nodes := self._branch(current_node, mip_lb):
                     include_nd, exclude_nd = nodes
                     queue.push(include_nd)
                     queue.push(exclude_nd)
 
+                    self.tree.add_edge(current_node.id, include_nd.id)
+                    self.tree.add_edge(current_node.id, exclude_nd.id)
+
+        from networkx.drawing.nx_agraph import graphviz_layout
+
+        pos = graphviz_layout(self.tree, prog='dot')
+        nx.draw(self.tree, pos, with_labels=True, arrows=True)
+        pyplot.show()
         best_solution_node.report_solution()
 
     def _create_root_node(self):
-        init_sol_finder = InitialSolutionFinder(self.gap_instance)
-        init_sol = init_sol_finder.find()
+        self.tree.add_node(0)
+        initial_solution = InitialSolutionFinder(self.gap_instance).find()
         branching_rules = []
         return BranchNode(
             gap_instance=self.gap_instance,
             branching_rules=branching_rules,
-            machine_schedules=init_sol
+            machine_schedules=initial_solution
         )
 
     @classmethod
@@ -75,7 +86,7 @@ class GAPBranchAndPrice:
         # in case node's LP value is lower than
         # so far found MIP LB, then whole tree rooted at node
         # can be discarded
-        if mip_lb is not None and node.obj_val() < mip_lb:
+        if mip_lb is not None and node.objective_value() <= mip_lb:
             return None
 
         # based on current solution obtain id of task and machine
@@ -92,16 +103,16 @@ class GAPBranchAndPrice:
         exclude_nd = BranchNode(
             node.gap_instance,
             copy.deepcopy(br_rls) + [exclude_branching],
-            copy.deepcopy(node.machine_schedules),
+            copy.deepcopy(node.get_machine_schedules()),
         )
 
         include_nd = BranchNode(
             node.gap_instance,
             copy.deepcopy(br_rls) + [include_branching],
-            copy.deepcopy(node.machine_schedules),
+            copy.deepcopy(node.get_machine_schedules()),
         )
 
         logging.info("  Exclude node {}".format(exclude_nd.id))
         logging.info("  Include node {}".format(include_nd.id))
 
-        return include_nd, exclude_nd
+        return exclude_nd, include_nd

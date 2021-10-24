@@ -20,7 +20,7 @@ class GeneralAssignmentProblem:
     def machine_schedule_profit(self, machine_schedule: TMachineSchedule) -> float:
         machine_id = machine_schedule[0]
         tasks = machine_schedule[1]
-        return sum(self.profits[machine_id][task_id] for task_id in tasks)
+        return self.profits[machine_id][tasks].sum()
 
     def weight(self, task_id: int, machine_id: int) -> float:
         return self.weights[machine_id][task_id]
@@ -43,6 +43,29 @@ def example_applied_integer_programming() -> GeneralAssignmentProblem:
     ])
 
     capacity = np.array([11, 18])
+    return GeneralAssignmentProblem(
+        num_tasks=num_tasks,
+        num_machines=num_machines,
+        weights=weights,
+        profits=profits,
+        capacity=capacity
+    )
+
+
+def exercise_applied_integer_programming() -> GeneralAssignmentProblem:
+    num_machines = 2
+    num_tasks = 3
+    profits = np.array([
+        [10, 13, 9],
+        [8, 14, 10]
+    ])
+
+    weights = np.array([
+        [10, 14, 8],
+        [9, 11, 13]
+    ])
+
+    capacity = np.array([23, 27])
     return GeneralAssignmentProblem(
         num_tasks=num_tasks,
         num_machines=num_machines,

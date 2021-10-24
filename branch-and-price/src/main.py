@@ -4,7 +4,10 @@ import sys
 import gurobipy as grb
 
 import input_data
-from standalone_model import GAPStandaloneModelBuilder, GAPStandaloneModelLpRelaxation, FeasibleMachineSchedulesFinder, \
+from branch_and_price import GAPBranchAndPrice
+from standalone_model import \
+    GAPStandaloneModelBuilder, \
+    GAPStandaloneModelLpRelaxation, \
     DantzigWolfeFormulationGapStandaloneModelLpRelaxation
 from standalone_model.dantzig_wolfe_formulation_gap_standalone_model_builder import \
     DantzigWolfeFormulationGapStandaloneModelBuilder
@@ -33,7 +36,7 @@ def main():
         use_standalone_model = args.method in {'standalone', 'both'}
         use_branch_and_price = args.method in {'branch_and_price', 'both'}
 
-        if use_standalone_model:
+        if use_standalone_model and False:
             # solve_using_standalone_model(input_data)
             gap = input_data.medium_example()
             # gap = input_data.example_applied_integer_programming()
@@ -57,8 +60,13 @@ def main():
             dw_lp_relaxation.report_results()
 
         if use_branch_and_price:
-            # solve_using_benders_decomposition(input_data)
-            pass
+            gap = input_data.medium_example()
+            gap_model = GAPStandaloneModelBuilder(gap).build()
+            gap_model.write()
+            gap_model.solve()
+            gap_model.report_results()
+
+            GAPBranchAndPrice(gap).solve()
 
     except argparse.ArgumentError:
         logging.exception('Exception raised during parsing arguments')

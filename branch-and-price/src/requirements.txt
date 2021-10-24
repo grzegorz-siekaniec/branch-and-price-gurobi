@@ -1,3 +1,6 @@
 gurobipy=9.1.2
 numpy=1.21.2
 bidict=0.21.3
+networkx=2.6.3
+pygraphviz=1.7
+matplotlib=3.4.3
