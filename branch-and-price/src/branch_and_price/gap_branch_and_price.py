@@ -1,5 +1,6 @@
 import copy
 import logging
+import math
 from typing import Optional, Tuple
 import networkx as nx
 from matplotlib import pyplot
@@ -60,7 +61,7 @@ class GAPBranchAndPrice:
         pos = graphviz_layout(self.tree, prog='dot')
         nx.draw(self.tree, pos, with_labels=True, arrows=True)
         pyplot.show()
-        best_solution_node.report_solution()
+        best_solution_node.report_integer_solution()
 
     def _create_root_node(self):
         self.tree.add_node(0)
@@ -83,10 +84,14 @@ class GAPBranchAndPrice:
         Two new nodes created based on those branching strategies are added to queue.
         """
 
-        # in case node's LP value is lower than
-        # so far found MIP LB, then whole tree rooted at node
-        # can be discarded
         if mip_lb is not None and node.objective_value() <= mip_lb:
+            # in case node's LP value is lower than
+            # so far found MIP LB, then whole tree rooted at node
+            # can be discarded
+            return None
+
+        if node.objective_value() == math.nan:
+            # Model after branching might become infeasible
             return None
 
         # based on current solution obtain id of task and machine

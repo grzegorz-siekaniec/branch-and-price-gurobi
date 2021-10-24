@@ -3,17 +3,14 @@ import itertools
 import logging
 import math
 from collections import defaultdict
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Collection
 
-import gurobipy as grb
-import numpy as np
-import scipy.optimize
+import gurobipy.gurobipy as grb
 from bidict import bidict
 
 from branch_and_price.branching_rule import BranchingRule
-from branch_and_price.subproblem import Subproblem
 from branch_and_price.subproblem_builder import SubproblemBuilder
-from common import TMachineSchedule, is_integer, TAssignment, is_non_zero
+from common import TMachineSchedule, is_integer, TAssignment, is_non_zero, has_solution
 from input_data import GeneralAssignmentProblem
 
 
@@ -31,15 +28,18 @@ class BranchNode:
         self.branching_rules = branching_rules
         self.gap_instance = gap_instance
 
-        self._rmp = grb.Model(f'GAP_RMP_{self.id}')
-        self._rmp.Params.LogToConsole = 0
-
         self.next_machine_schedule_index = itertools.count(start=0)
         self.machine_schedule_index = dict()
         self.machine_schedule_index_to_variable = dict()
         self.machine_to_assignment_constraint: Dict = dict()
         self.task_to_assignment_constraint: Dict = dict()
 
+        self._rmp = grb.Model(f'GAP_RMP_{self.id}')
+        self._init_model(machine_schedules)
+
+    def _init_model(self, machine_schedules: List[TMachineSchedule]):
+        self._rmp.Params.LogToConsole = 0
+        self._rmp.Params.DualReductions = 0
         self._build_constraints()
         self._add_feasible_initial_columns(machine_schedules)
 
@@ -89,10 +89,10 @@ class BranchNode:
     def solve(self):
         self._solve_using_column_generation()
 
-    def objective_value(self) -> Optional[float]:
+    def objective_value(self) -> float:
         return \
             self._rmp.getAttr(grb.GRB.Attr.ObjVal) \
-            if self._rmp.status == grb.GRB.Status.OPTIMAL \
+            if has_solution(self._rmp.status) \
             else float('nan')
 
     def get_machine_schedules(self):
@@ -110,6 +110,30 @@ class BranchNode:
 
         logging.info('')
 
+    def report_integer_solution(self):
+        obj_val = self.objective_value()
+
+        logging.info(f"** Integral solution to RMP on node {self.id}! **")
+        logging.info("Objective value: %f", obj_val)
+
+        machine_schedule_index_to_variable = bidict(self.machine_schedule_index_to_variable)
+        machine_to_tasks: Dict[int, Collection[int]] = defaultdict(set)
+        for var in self._rmp.getVars():
+            if is_non_zero(var.x):
+                assignment_idx = machine_schedule_index_to_variable.inverse.get(var)
+                machine_schedule = self.machine_schedule_index[assignment_idx]
+                machine_id = machine_schedule[0]
+                tasks = machine_schedule[1]
+                machine_to_tasks[machine_id] = tasks
+
+        logging.info("Machine -> Set of tasks")
+
+        for machine in sorted(machine_to_tasks):
+            tasks = machine_to_tasks[machine]
+            logging.info(f'{machine}\t{" ".join([str(task) for task in tasks])}')
+
+        logging.info('')
+
     def _solve_using_column_generation(self):
         logging.info("[CG] Solving GAP using column generation")
 
@@ -118,7 +142,7 @@ class BranchNode:
         optimal = False
         itr_cnt = itertools.count(start=1)
         itr_with_no_progress_cnt = 0
-        subproblem_builder = SubproblemBuilder(gap_instance=self.gap_instance)
+
         previous_itr_objective_value = math.nan
 
         while not optimal:
@@ -132,77 +156,62 @@ class BranchNode:
             self._rmp.write(self._rmp.ModelName + '.lp')
             self._rmp.optimize()
 
-            if math.isclose(previous_itr_objective_value, self._rmp.getObjective().getValue()):
+            if math.isclose(previous_itr_objective_value, self.objective_value()):
                 itr_with_no_progress_cnt += 1
                 if itr_with_no_progress_cnt > 50:
                     logging.info("[CG] Stopping due to no progress."
                                  "Iteration %d on node %d."
                                  "The latest objective value: %.1f",
-                                 col_gen_itr, self.id, self._rmp.getObjective().getValue())
+                                 col_gen_itr, self.id, self.objective_value())
                     break
-            else:
-                previous_itr_objective_value = self._rmp.getObjective().getValue()
-            # self.report_solution()
+
+            if has_solution(self._rmp.status):
+                previous_itr_objective_value = self.objective_value()
+
+            columns_added = self._add_columns_with_positive_reduced_cost()
+            optimal = not columns_added
+
+    def _add_columns_with_positive_reduced_cost(self) -> bool:
+        """
+        Solves sub-problems (knapsack) in order to find columns
+        with positive reduced cost or determine
+        that existing solution is optimal.
+        :return: True if at least one column was added.
+        """
+
+        try:
             # obtain duals associated with tasks, solution might be infeasible
             # but duals will be returned
             task_duals = [row.Pi for _, row in self.task_to_assignment_constraint.items()]
             machine_duals = [row.Pi for _, row in self.machine_to_assignment_constraint.items()]
-            # self.report_solution()
-            optimal = True
+        except AttributeError:
+            # no dual information
+            return False
 
-            best_subproblem: Optional[Subproblem] = None
+        subproblem_builder = SubproblemBuilder(gap_instance=self.gap_instance)
 
-            # self.do_stuff()
+        columns_added = False
+        for machine_id in range(self.gap_instance.num_machines):
+            logging.debug("[CG]  * Solving subproblem for machine {}".format(machine_id))
 
-            for machine_id in range(self.gap_instance.num_machines):
-                logging.debug("[CG]  * Solving subproblem for machine {}".format(machine_id))
+            machine_dual = machine_duals[machine_id]
 
-                machine_dual = machine_duals[machine_id]
+            subproblem = subproblem_builder.build(machine_id=machine_id,
+                                                  machine_dual=machine_dual,
+                                                  task_duals=task_duals,
+                                                  branching_rules=self.branching_rules)
+            # subproblem._model.write(f'subproblem_{self.id}_{itr_cnt}_{machine_id}.lp')
+            subproblem.solve()
+            subproblem_objective_value = subproblem.objective_value()
+            if subproblem_objective_value is None or subproblem_objective_value <= 0:
+                continue
 
-                subproblem = subproblem_builder.build(machine_id=machine_id,
-                                                      machine_dual=machine_dual,
-                                                      task_duals=task_duals,
-                                                      branching_rules=self.branching_rules)
-                # subproblem._model.write(f'subproblem_{self.id}_{itr_cnt}_{machine_id}.lp')
-                subproblem.solve()
-                subproblem_objective_value = subproblem.objective_value()
-                if subproblem_objective_value is None or subproblem_objective_value <= 0:
-                    continue
+            columns_added = True
 
-                optimal = False
+            for machine_schedule in subproblem.all_solutions():
+                self._add_column_to_rmp(machine_schedule)
 
-                for machine_schedule in subproblem.all_solutions():
-                    self._add_column_to_rmp(machine_schedule)
-
-            #     if best_subproblem is None or best_subproblem.objective_value() > subproblem_objective_value:
-            #         best_subproblem = subproblem
-            #
-            # if best_subproblem is not None:
-            #
-            #     for machine_schedule in best_subproblem.all_solutions():
-            #         self._add_column_to_rmp(machine_schedule)
-
-    def do_stuff(self):
-        n_tasks = self.gap_instance.num_tasks
-        n_rows = self.gap_instance.num_machines + self.gap_instance.num_tasks
-        cols = self.get_machine_schedules()
-        n_cols = len(cols)
-        A = np.zeros(shape=(n_rows, n_cols))
-
-        for machine, tasks in cols:
-            col_idx = machine
-            row_idx = n_tasks + machine
-            A[row_idx][col_idx] = 1.0
-            for task in tasks:
-                row_idx = task
-                A[row_idx][col_idx] = 1.0
-
-        b = np.ones(shape=n_rows)
-        bounds = [(None, 1.0) for _ in range(n_cols)]
-        c = np.array([-self.gap_instance.machine_schedule_profit(col) for col in cols])
-
-        res = scipy.optimize.linprog(c=c, A_eq=A, b_eq=b, bounds=bounds)
-        print(res)
+        return columns_added
 
     def _build_constraints(self):
         self._build_task_binding_constraints()

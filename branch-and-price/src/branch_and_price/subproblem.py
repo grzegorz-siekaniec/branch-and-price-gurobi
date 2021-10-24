@@ -1,13 +1,15 @@
-import math
 from typing import Tuple, Optional, List
 
-import gurobipy as grb
+import gurobipy.gurobipy as grb
 from bidict import bidict
 
-from common import TMachineSchedule, is_non_zero
+from common import TMachineSchedule, is_non_zero, has_solution
 
 
 class Subproblem:
+    """
+    Knapsack problem.
+    """
 
     def __init__(self,
                  machine_id: int,
@@ -21,8 +23,8 @@ class Subproblem:
 
     def solve(self):
         self._model.optimize()
-        self._objective_value = self._model.getAttr(grb.GRB.Attr.ObjVal) \
-            if self._model.status == grb.GRB.Status.OPTIMAL \
+        self._objective_value = self._model.ObjVal \
+            if has_solution(self._model.status) \
             else None
 
     def objective_value(self) -> Optional[float]:
@@ -49,8 +51,8 @@ class Subproblem:
         for k in range(self._model.solCount):
             self._model.Params.solutionNumber = k
             curr_obj_val = self._model.poolObjVal
-            # if curr_obj_val < self._objective_value:
-            #     continue
+            if curr_obj_val < self._objective_value:
+                continue
             machine_schedules.append(self._get_solution())
         return machine_schedules
 

@@ -1,10 +1,9 @@
 from typing import Tuple, List, Dict
-import gurobipy as grb
+import gurobipy.gurobipy as grb
 from bidict import bidict
 
 from branch_and_price.branching_rule import BranchingRule
 from branch_and_price.subproblem import Subproblem
-from common import TAssignment
 from input_data import GeneralAssignmentProblem
 
 
