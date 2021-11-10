@@ -1,7 +1,7 @@
 import argparse
 import logging
 import sys
-import gurobipy as grb
+import gurobipy.gurobipy as grb
 
 import input_data
 from branch_and_price import GAPBranchAndPrice
@@ -22,8 +22,13 @@ def main():
                             level=logging.INFO)
 
         parser = argparse.ArgumentParser(description="Solves machine assignment problem.")
-        # parser.add_argument('input_data',
-        #                     help='Path to JSON file containing input data.')
+        parser.add_argument('data_set. See branch-and-price/src/input_data/general_assignment_problem.py '
+                            'for details of each data set.',
+                            choices=['example_applied_integer_programming',
+                                     'exercise_applied_integer_programming',
+                                     'small_example',
+                                     'medium_example'],
+                            help='Name of data set.')
 
         parser.add_argument('--method',
                             choices=['standalone', 'branch_and_price', 'both'],
@@ -31,16 +36,18 @@ def main():
                             help='A method that should be used to solve a problem. default=both.')
         args = parser.parse_args()
 
-        # solving facility problem
-        # input_data = InputData.read(args.input_data)
+        # solving GAP problem
+        data_set = getattr(input_data, args.data_set)
+
+        logging.info(f'Solving {data_set} problem.')
+
         use_standalone_model = args.method in {'standalone', 'both'}
         use_branch_and_price = args.method in {'branch_and_price', 'both'}
 
-        if use_standalone_model and False:
-            # solve_using_standalone_model(input_data)
-            gap = input_data.medium_example()
-            # gap = input_data.example_applied_integer_programming()
+        gap = data_set()
 
+        if use_standalone_model:
+            logging.info("Solving using standalone model.")
             gap_model = GAPStandaloneModelBuilder(gap).build()
             gap_model.write()
             gap_model.solve()
@@ -60,7 +67,7 @@ def main():
             dw_lp_relaxation.report_results()
 
         if use_branch_and_price:
-            gap = input_data.medium_example()
+            logging.info("Solving using Branch-And-Price.")
             gap_model = GAPStandaloneModelBuilder(gap).build()
             gap_model.write()
             gap_model.solve()

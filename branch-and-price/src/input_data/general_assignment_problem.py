@@ -10,9 +10,9 @@ class GeneralAssignmentProblem:
 
     num_tasks: int
     num_machines: int
-    weights: np.ndarray
-    profits: np.ndarray
-    capacity: np.ndarray
+    weights: np.ndarray  # shape: num_machines x num_tasks
+    profits: np.ndarray  # shape: num_machines x num_tasks
+    capacity: np.ndarray  # shape: num_machines x num_tasks
 
     def assignment_profit(self, task_id: int, machine_id: int) -> float:
         return self.profits[machine_id][task_id]

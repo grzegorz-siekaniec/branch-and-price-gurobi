@@ -62,7 +62,7 @@ class BranchNode:
         To do so it checks all base columns and identifies assignment
         of task to machine that is non-integer. However one needs to be careful
         as columns represents different solutions to knapsack problem. So there
-        could be to columns each with value 0.5 that assign task `t` to machine `m`.
+        could be two columns each with value 0.5 that assign task `t` to machine `m`.
         In this case assignment of `t` to `m` would be integer and such tuple
         will not be returned.
         :return: Return machine_id, task_id
@@ -139,23 +139,24 @@ class BranchNode:
 
         self._rmp.setAttr(grb.GRB.Attr.ModelSense, grb.GRB.MAXIMIZE)
 
-        optimal = False
         itr_cnt = itertools.count(start=1)
         itr_with_no_progress_cnt = 0
 
         previous_itr_objective_value = math.nan
 
-        while not optimal:
+        while True:
             col_gen_itr = next(itr_cnt)
             logging.debug("[CG] Column generation iteration ... {}".format(col_gen_itr))
             if col_gen_itr % 200 == 0:
                 logging.info("[CG] Column generation iteration %d on node %d", col_gen_itr, self.id)
                 logging.info("[CG]  * Objective value: {:.2f}".format(self._rmp.getObjective().getValue()))
 
+            # solve RMP
             self._rmp.update()
             self._rmp.write(self._rmp.ModelName + '.lp')
             self._rmp.optimize()
 
+            # early stop due to no progress
             if math.isclose(previous_itr_objective_value, self.objective_value()):
                 itr_with_no_progress_cnt += 1
                 if itr_with_no_progress_cnt > 50:
@@ -168,10 +169,11 @@ class BranchNode:
             if has_solution(self._rmp.status):
                 previous_itr_objective_value = self.objective_value()
 
-            columns_added = self._add_columns_with_positive_reduced_cost()
-            optimal = not columns_added
+            columns_added = self._solve_knapsack_subproblems(col_gen_itr)
+            if not columns_added:
+                break
 
-    def _add_columns_with_positive_reduced_cost(self) -> bool:
+    def _solve_knapsack_subproblems(self, itr_cnt) -> bool:
         """
         Solves sub-problems (knapsack) in order to find columns
         with positive reduced cost or determine
@@ -196,13 +198,17 @@ class BranchNode:
 
             machine_dual = machine_duals[machine_id]
 
+            # building knapsack subproblem using dual information
             subproblem = subproblem_builder.build(machine_id=machine_id,
                                                   machine_dual=machine_dual,
                                                   task_duals=task_duals,
                                                   branching_rules=self.branching_rules)
-            # subproblem._model.write(f'subproblem_{self.id}_{itr_cnt}_{machine_id}.lp')
+            subproblem._model.write(f'subproblem_{self.id}_{itr_cnt}_{machine_id}.lp')
             subproblem.solve()
             subproblem_objective_value = subproblem.objective_value()
+
+            # are there any columns with positive reduced cost?
+            # only those can improve RMP solution
             if subproblem_objective_value is None or subproblem_objective_value <= 0:
                 continue
 
